@@ -1,4 +1,5 @@
 //Written and cleaned with the help of DeepSeek - Thank you.
+//uses only 1300 Byte Flash, remove Serial.print() and the demo
 
 #include <SPI.h>
 
