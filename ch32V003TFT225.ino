@@ -1,5 +1,5 @@
 // CH32V006 ST7789 76x284 Display Driver
-
+//SPI MOSI/SDA = PC6, SCL = PC5 default pins
 
 #define TFT_RST  PD4
 #define TFT_DC   PD3
