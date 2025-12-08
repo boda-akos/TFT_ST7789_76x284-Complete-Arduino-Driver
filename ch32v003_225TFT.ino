@@ -4,11 +4,12 @@
 #define TFT_DC   PD3
 #define TFT_CS   PD2
 //SPI MOSI/SDA = PC6, SCL = PC5 default pins
+// CH32V006 ST7789 76x284 Display Driver
 
-// Color definitions (RGB565) - CORRECTED LABELS
-#define BL 0x001F  // Blue
+// Color definitions (RGB565)
+#define BL 0x001F  // Red
 #define GN 0x07E0  // Green  
-#define RD 0xF800  // Red
+#define RD 0xF800  // Blue
 #define WH 0xFFFF  // White
 #define BK 0x0000  // Black
 #define CY 0xFFE0  // Cyan
@@ -21,6 +22,11 @@
 #define DISPLAY_HEIGHT 284
 #define TFT_X_OFFSET   82
 #define TFT_Y_OFFSET   18
+#define ST77XX_MADCTL_MY 0x80
+#define ST77XX_MADCTL_MX 0x40
+#define ST77XX_MADCTL_MV 0x20
+#define ST77XX_MADCTL_ML 0x10
+#define ST77XX_MADCTL_RGB 0x08
 
 #include <SPI.h>
 
@@ -57,6 +63,11 @@ const uint8_t Chartable[] =
   0x38,0x44,0x47,0x44,0x38, 0x38,0x47,0x44,0x47,0x38, 0x38,0x45,0x44,0x45,0x38, 0x3C,0x40,0x47,0x20,0x7C,
   0x3C,0x47,0x40,0x27,0x7C, 0x3C,0x41,0x40,0x21,0x7C };
 
+/*Basic Colors (BGR 5-6-5 format)
+RED: 0x001F GREEN: 0x07E0 BLUE: 0xF800 YELLOW: 0x07FF (RED + GREEN) MAGENTA: 0xF81F (RED + BLUE) CYAN: 0xFFE0 (GREEN + BLUE)
+WHITE: 0xFFFF (ALL ON) BLACK: 0x0000 (ALL OFF) ORANGE: 0x04FF PINK: 0xFC1F PURPLE: 0x8010 LIME: 0x05E0 TEAL: 0x87E0 NAVY: 0x8000
+MAROON: 0x0010 DARK GRAY: 0x4208 GRAY: 0x8410 LIGHT GRAY: 0xC618 SILVER: 0xA514 BROWN: 0x0210 OLIVE: 0x0410 FOREST GREEN: 0x0280
+GOLD: 0x051F Lighter: 0x063F Darker: 0x0410*/
 // ========== SETUP ==========
 void setup() { 
     /*// Clock setup if no 24MHz crystal
@@ -66,7 +77,7 @@ void setup() {
     RCC->CFGR0 &= ~RCC_SW;
     RCC->CFGR0 |= RCC_SW_PLL;
     while((RCC->CFGR0 & RCC_SWS) != RCC_SWS_PLL);
-    */
+   */
     // Pin initialization
     pinMode(PD2, OUTPUT);  // TFT_CS
     pinMode(PD3, OUTPUT);  // TFT_DC
@@ -75,7 +86,7 @@ void setup() {
     //Serial.begin(115200);
     
     SPI.begin(); 
-    SPI.setClockDivider(1);  // SPI clock 12Mhz
+    SPI.setClockDivider(1);  //SPI clock 12Mhz
  
     InitTFT();
     setRotation(1);
@@ -84,9 +95,8 @@ void setup() {
 
 // ========== MAIN LOOP ==========
 void loop() { 
-    static byte x;  
-    //runDisplayTest();  
-    //setRotation(x++);
+static byte x;  
+runDisplayTest();  setRotation(x++);
 }
 
 // ========== DISPLAY FUNCTIONS ==========
@@ -105,6 +115,8 @@ void writeData(uint8_t data) {
 }
 
 void SPI1_Transfer(uint8_t data) {
+    
+ // CH32V003: SPI1 is at 0x40013000
     // Wait for TX empty
     while (!(SPI1->STATR & (1 << 1)));  // SPI_STATR_TXE
     
@@ -113,71 +125,65 @@ void SPI1_Transfer(uint8_t data) {
     // Wait for RX not empty
     while (!(SPI1->STATR & (1 << 0)));  // SPI_STATR_RXNE
     
-    // Read to clear RXNE flag 
+    // Read to clear RXNE flag (IMPORTANT!)
     volatile uint8_t dummy __attribute__((unused)) = SPI1->DATAR;
+
 }
 
 // ========== SET ADDRESS WINDOW WITH OFFSETS ==========
-// FIXED: Use 16-bit values instead of 32-bit packing
 void setAddrWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
     // Add display offsets
     x += xStart;  
     y += yStart;
-    uint16_t x2 = x + w - 1;
-    uint16_t y2 = y + h - 1;
+    uint32_t x1 = ((uint32_t)x<<16) | (x+w);
+    uint32_t y1 = ((uint32_t)y<<16) | (y+h);
 
     writeCommand(0x2A); // Column address set
-    writeData(x >> 8);
-    writeData(x & 0xFF);
-    writeData(x2 >> 8);
-    writeData(x2 & 0xFF);
+    writeData(x1 >> 24);
+    writeData(x1 >> 16);
+    writeData(x1 >> 8);
+    writeData(x1 & 0xFF);
     
     writeCommand(0x2B); // Row address set
-    writeData(y >> 8);
-    writeData(y & 0xFF);
-    writeData(y2 >> 8);
-    writeData(y2 & 0xFF);
+    writeData(y1 >> 24);
+    writeData(y1 >> 16);
+    writeData(y1 >> 8);
+    writeData(y1 & 0xFF);
     
     writeCommand(0x2C); // Memory write
 }
 
 // ========== SET ROTATION ==========
-// FIXED: Correct MADCTL values for proper rotation
 void setRotation(uint8_t rotation) {
     rotate = rotation % 4;
     uint8_t madctl;
-    
+   //TFT_X_OFFSET=82  TFT_Y_OFFSET=18
     switch (rotate) {
         case 0:  // Portrait
             madctl = 0xC0;  // MY=1, MX=1, MV=0
-            xStart = TFT_X_OFFSET; 
-            yStart = TFT_Y_OFFSET;
+            xStart=TFT_X_OFFSET; yStart=TFT_Y_OFFSET;
             break;
         case 1:  // Landscape (90°)
-            madctl = 0xA0;  // MY=1, MX=0, MV=1 
-            xStart = TFT_Y_OFFSET; 
-            yStart = TFT_X_OFFSET;
+            madctl = 0xb0;  // MY=1, MX=0, MV=1
+            xStart=TFT_Y_OFFSET; yStart=TFT_X_OFFSET;
             break;
         case 2:  // Portrait (180°)
             madctl = 0x00;  // MY=0, MX=0, MV=0
-            xStart = TFT_X_OFFSET; 
-            yStart = TFT_Y_OFFSET;
+            xStart=TFT_X_OFFSET; yStart=TFT_Y_OFFSET;
             break;
         case 3:  // Landscape (270°)
             madctl = 0x60;  // MY=0, MX=1, MV=1
-            xStart = TFT_Y_OFFSET; 
-            yStart = TFT_X_OFFSET;
-            break;
-    }
-    
+            xStart=TFT_Y_OFFSET; yStart=TFT_X_OFFSET;
+            break;}
     writeCommand(0x36);   // MADCTL command
     writeData(madctl);
     delay(10);
-}
+    }
+
 
 // ========== BASIC DRAWING FUNCTIONS ==========
 void tftPixel(uint16_t x, uint16_t y, uint16_t color) {
-    setAddrWindow(x, y, 1, 1);
+    setAddrWindow(x, y, x, y);
     GPIOD->OUTDR |= (1<<3);    // DC HIGH (data)
     GPIOD->OUTDR &= ~(1<<2);   // CS LOW (PD2)
     SPI1_Transfer(color >> 8);      // High byte
@@ -191,22 +197,21 @@ void fillScreen(uint16_t color) {
     // Set address window for entire display
     if (rotate == 0 || rotate == 2) {
         // Portrait: 76x284
-        setAddrWindow(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+        setAddrWindow(0, 0, 75, 283);
     } else {
         // Landscape: 284x76  
-        setAddrWindow(0, 0, DISPLAY_HEIGHT, DISPLAY_WIDTH);
+        setAddrWindow(0, 0, 283, 75);
     }
     
-    GPIOD->OUTDR |= (1<<3);    // DC HIGH PD3 (data is sent)
-    GPIOD->OUTDR &= ~(1<<2);   // CS LOW PD2
+    GPIOD->OUTDR |= (1<<3);    // DC HIGH (data)
+    GPIOD->OUTDR &= ~(1<<2);   // CS LOW (PD2)
     
     // Fill all pixels
-    for(uint32_t i = 0; i < DISPLAY_WIDTH * DISPLAY_HEIGHT; i++) {
+    for(uint32_t i = 0; i < 76 * 284; i++) {
         SPI1_Transfer(hi);
         SPI1_Transfer(lo);  
     }
-    
-    GPIOD->OUTDR |= (1<<2);    // CS HIGH (PD2)
+     GPIOD->OUTDR |= (1<<2);    // CS HIGH (PD2)
 }
 
 // ========== TEXT FUNCTIONS ==========
@@ -258,13 +263,13 @@ void tftPrint(char *p) {
         // Newline check
         if (rotate == 0 || rotate == 2) {
             // Portrait width
-            if (tftIdx >= DISPLAY_WIDTH - textSize * 6) { 
+            if (tftIdx >= 76 - textSize * 6) { 
                 tftIdx = 0; 
                 tftIdy += 8 * textSize; 
             }
         } else {
             // Landscape width
-            if (tftIdx >= DISPLAY_HEIGHT - textSize * 6) { 
+            if (tftIdx >= 284 - textSize * 6) { 
                 tftIdx = 0; 
                 tftIdy += 8 * textSize; 
             }
@@ -358,17 +363,35 @@ void drawCircle(int x0, int y0, int r, uint16_t color) {
     }
 }
 
-// FIXED: Added missing fillCircle function
 void fillCircle(int x0, int y0, int r, uint16_t color) {
-    for (int y = -r; y <= r; y++) {
-        for (int x = -r; x <= r; x++) {
-            if (x*x + y*y <= r*r) {
-                tftPixel(x0 + x, y0 + y, color);
-            }
+    vLine(x0, y0 - r, 2 * r + 1, color);
+    fillCircleHelper(x0, y0, r, 3, 0, color);
+}
+
+// ========== HELPER FUNCTIONS ==========
+void fillCircleHelper(int x0, int y0, int r, char cornername, int delta, uint16_t color) {
+    int f = 1 - r, ddF_x = 1, ddF_y = -2 * r, x = 0, y = r;
+    
+    while (x < y) {
+        if (f >= 0) {
+            y--;
+            ddF_y += 2;
+            f += ddF_y;
+        }
+        x++;
+        ddF_x += 2;
+        f += ddF_x;
+        
+        if (cornername & 0x1) {
+            vLine(x0 + x, y0 - y, 2 * y + 1 + delta, color);
+            vLine(x0 + y, y0 - x, 2 * x + 1 + delta, color);
+        }
+        if (cornername & 0x2) {
+            vLine(x0 - x, y0 - y, 2 * y + 1 + delta, color);
+            vLine(x0 - y, y0 - x, 2 * x + 1 + delta, color);
         }
     }
 }
-
 
 // ========== INITIALIZE DISPLAY ==========
 void InitTFT(void) {
@@ -401,66 +424,79 @@ void InitTFT(void) {
     writeData(0x00);
     writeData(0x00);      // Start column = 0
     writeData(0x00);
-    writeData(0xEF);      // End column = 239
+    writeData(0xef);      // End column = 75,239
     
     writeCommand(0x2B);   // Row Address Set
     writeData(0x00);
     writeData(0x00);      // Start row = 0
     writeData(0x01);
-    writeData(0x3F);      // End row = 319
+    writeData(0x3f);      // End row = 283 ,319
     
     writeCommand(0x20);   // Display Inversion off
     delay(10);
     
     writeCommand(0x29);   // Display On
     delay(100);
-    
     // Clear screen
     fillScreen(BK);
 }
 
+
+void drawTestPattern(uint8_t rot) {
+    // Draw different patterns based on rotation
+    if (rot == 0 || rot == 2) {
+        // Portrait patterns
+        drawRect(0, 0,76,284, WH);
+        drawRect(5, 5, 66, 50, GN);
+        fillRect(10, 10, 25, 20, RD);
+        fillCircle(50, 30, 15, BL);
+        drawLine(0, 0, 75, 283, YL);
+    } else {
+        // Landscape patterns
+        drawRect(0, 0,284,76, WH);
+        drawRect(10, 10, 264, 56, GN);
+        fillRect(20, 20, 100, 20, RD);
+        fillCircle(200, 38, 15, BL);
+        drawLine(0, 0, 283, 75, YL);
+    }
+}
+
 // ========== DISPLAY TEST ==========
 void runDisplayTest() {
+       
     // Test solid colors
     fillScreen(RD); delay(500);
     fillScreen(GN); delay(500);
     fillScreen(BL); delay(500);
     fillScreen(BK);
     
-    // Draw test patterns
-    if (rotate == 0 || rotate == 2) {
-        // Portrait patterns
-        drawRect(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, CY);
-        fillCircle(DISPLAY_WIDTH/2, DISPLAY_HEIGHT - 50, 15, YL);
-        drawLine(0, 0, DISPLAY_WIDTH-1, DISPLAY_HEIGHT-1, MG);
-        drawLine(DISPLAY_WIDTH-1, 0, 0, DISPLAY_HEIGHT-1, MG);
-    } else {
-        // Landscape patterns
-        drawRect(0, 0, DISPLAY_HEIGHT, DISPLAY_WIDTH, CY);
-        fillCircle(DISPLAY_HEIGHT/2, DISPLAY_WIDTH/2, 15, YL);
-        drawLine(0, 0, DISPLAY_HEIGHT-1, DISPLAY_WIDTH-1, MG);
-        drawLine(DISPLAY_HEIGHT-1, 0, 0, DISPLAY_WIDTH-1, MG);
-    }
-    
-    // Display text
+    // Draw border
+   //fillRect(0,0,75, 285,  CY);
+   
+    fillCircle(38, 230, 15, CY);
+    // Draw center cross
+    drawLine(38, 140, 38, 144, YL);
+    drawLine(36, 142, 40, 142, YL);
+    delay(1000);
     setTextCol(WH, BK);
-    
-    if (rotate == 0 || rotate == 2) {
-        setTextSize(1);  
-        tftCursor(10, 10);
-        tftPrint("CH32V003");
-        tftCursor(10, 25);
-        tftPrint("76x284 TFT");
-        tftCursor(10, 40);
-        tftPrint("Test OK");
-    } else {
-        setTextSize(2); 
-        tftCursor(20, 10);
-        tftPrint("CH32V003");
-        tftCursor(20, 30);
-        tftPrint("TFT OK");
+    if (rotate ==2 || rotate ==0) {
+    setTextSize(1);  
+    tftCursor(10, 10);
+    tftPrint("CH32V006");
+    tftCursor(10, 25);
+    tftPrint("76x284 TFT");
+    tftCursor(10, 40);
+    tftPrint("Test PASS");
+
     }
-    
-    delay(2000);
+    else {setTextSize(2); tftCursor(10, 10);
+    tftPrint("CH32V006 CH32V003");
+    tftCursor(10, 30);
+    tftPrint("76x284 ST7789 TFT");
+    tftCursor(10, 50);
+    tftPrint("Test PASS PASS PASS");
+   }
+   delay(2000);    
     fillScreen(BK);
+    drawTestPattern(rotate);delay(2000);
 }
