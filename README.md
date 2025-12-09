@@ -1,3 +1,4 @@
 This 2.25 inch 76x284 pixels ST7789 TFT is popular, but no simple driver was found for it. The usual libraries took up 16K flash easily. This version - without demo code- occupies about 2K space inclusive the text option or 1300 bytes without.
 Tested on AVR Arduino Mini, WCH CH32V003 and CH32V006. 
 About the CH32V00x : the code uses about 10K flash, in the CH32V003 about 6K flash remains which is still good. The CH32V006 has plenty of space, but for some unknown reason, not so well supported with Arduino code. The only non-official core which compiles CH32V006 code is on Github. Find it here https://github.com/openwch/arduino_core_ch32/pull/200, author Maxint-RD, select CH32VM00X core.
+To upload in CH32V006 you also have to consider https://github.com/maxint-rd/arduino_core_ch32/blob/support-CH32V002F4-CH32V006F8/variants/CH32VM00X/README.md#updating-openocd
