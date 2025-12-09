@@ -6,7 +6,6 @@
 #define TFT_CS        3
 #define TFT_RST       4
 #define TFT_DC        5
-#define SYNC_PIN      6
 
 #define TFT_WIDTH     76
 #define TFT_HEIGHT    284
@@ -98,11 +97,6 @@ void runDemo() {
   drawCircle(TFT_WIDTH/2, TFT_HEIGHT/2, 30, CYAN);
   fillCircle(TFT_WIDTH/2, TFT_HEIGHT/2, 20, BLUE);
   delay(2000);
-  
-  // Signal to STM32
-  digitalWrite(SYNC_PIN, HIGH);
-  delay(100);
-  digitalWrite(SYNC_PIN, LOW);
   
   Serial.println("Demo complete!");
 }
